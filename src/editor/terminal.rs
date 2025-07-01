@@ -1,29 +1,20 @@
 use crossterm::cursor::{Hide, Show, MoveTo};
-use crossterm::queue;
+use crossterm::{queue, Command};
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType};
 use std::io::{stdout, Error, Write};
+use core::fmt::Display;
 
 #[derive(Clone, Copy)]
 pub struct Size {
-    pub height: u16,
-    pub width: u16,
+    pub height: usize,
+    pub width: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Position {
-    pub x: u16,
-    pub y: u16,
-}
-
-impl Position {
-    pub fn origin() -> Self {
-        Self { x: 0, y: 0 }
-    }
-
-    pub fn at(x: u16, y:u16) -> Self {
-        Self { x, y }
-    }
+    pub col: usize,
+    pub row: usize,
 }
 
 pub struct Terminal;
@@ -37,40 +28,51 @@ impl Terminal {
     pub fn initialize() -> Result<(), Error> {
         enable_raw_mode()?;
         Self::clear_screen()?;
-        Self::move_cursor_to(Position::origin())?;
         Self::execute()
     }
 
     pub fn clear_screen() -> Result<(), Error> {
-       queue!(stdout(), Clear(ClearType::All))
+       Self::queue_cmd(Clear(ClearType::All))
     }
 
     pub fn clear_line() -> Result<(), Error> {
-        queue!(stdout(), Clear(ClearType::CurrentLine))
+        Self::queue_cmd(Clear(ClearType::CurrentLine))
     }
 
-    pub fn move_cursor_to(pos: Position) -> Result<(), Error> {
-        queue!(stdout(), MoveTo(pos.x, pos.y))
+    pub fn move_caret_to(pos: Position) -> Result<(), Error> {
+        #[allow(clippy::cast_possible_truncation, clippy::as_conversions)]
+        Self::queue_cmd(MoveTo(pos.col as u16, pos.row as u16))
     }
 
-    pub fn hide_cursor() -> Result<(), Error> {
-        queue!(stdout(), Hide)
+    pub fn hide_caret() -> Result<(), Error> {
+        Self::queue_cmd(Hide)
     }
 
-    pub fn show_cursor() -> Result<(), Error> {
-        queue!(stdout(), Show)
+    pub fn show_caret() -> Result<(), Error> {
+        Self::queue_cmd(Show)
     }
 
-    pub fn print(string: &str) -> Result<(), Error> {
-        queue!(stdout(), Print(string))
+    pub fn print<T: Display>(string: T) -> Result<(), Error> {
+        Self::queue_cmd(Print(string))
     }
 
     pub fn size() -> Result<Size, Error> {
-        let (width, height) = size()?;
+        let (width_u16, height_u16) = size()?;
+
+        #[allow(clippy::as_conversions)]
+        let height = height_u16 as usize;
+
+        #[allow(clippy::as_conversions)]
+        let width = width_u16 as usize;
+
         Ok(Size { height, width })
     }
 
     pub fn execute() -> Result<(), Error> {
         stdout().flush()
+    }
+
+    fn queue_cmd(cmd: impl Command) -> Result<(), Error> {
+        queue!(stdout(), cmd)
     }
 }
