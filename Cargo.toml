@@ -1,6 +1,7 @@
 [package]
 name = "hrshi"
 version = "0.1.0"
+authors = ["Harish Kumar <harishtpj@outlook.com>"]
 edition = "2021"
 
 [dependencies]

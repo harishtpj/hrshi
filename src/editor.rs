@@ -1,5 +1,5 @@
 use core::cmp::min;
-use std::io::Error;
+use std::{env, io::Error};
 use crossterm::event::{
     read,
     Event::{self, Key},
@@ -7,10 +7,10 @@ use crossterm::event::{
 };
 
 mod terminal;
+mod view;
 use terminal::{Terminal, Size, Position};
+use view::View;
 
-const NAME: &str = env!("CARGO_PKG_NAME");
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone, Copy, Default)]
 struct Location {
@@ -22,14 +22,23 @@ struct Location {
 pub struct Editor {
     should_quit: bool,
     location: Location,
+    view: View,
 }
 
 impl Editor {
     pub fn run(&mut self) {
         Terminal::initialize().unwrap();
+        self.handle_args();
         let res = self.repl();
         Terminal::terminate().unwrap();
         res.unwrap();
+    }
+
+    fn handle_args(&mut self) {
+        let args: Vec<String> = env::args().collect();
+        if let Some(fname) = args.get(1) {
+            self.view.load(fname);
+        }
     }
 
     fn repl(&mut self) -> Result<(), Error> {
@@ -112,7 +121,7 @@ impl Editor {
             Terminal::clear_screen()?;
             Terminal::print("Goodbye! \r\n")?;
         } else {
-            Self::draw_rows()?;
+            self.view.render()?;
             Terminal::move_caret_to(Position { 
                 col: self.location.x, 
                 row: self.location.y
@@ -120,34 +129,6 @@ impl Editor {
         }
         Terminal::show_caret()?;
         Terminal::execute()
-    }
-
-    fn draw_welcome_msg() -> Result<(), Error> {
-        let mut msg = format!("{NAME} editor -- version {VERSION}");
-        let cols = Terminal::size()?.width.saturating_sub(1);
-        msg = format!("~{msg:^cols$}");
-        Terminal::print(msg)
-    }
-
-    fn draw_empty_row() -> Result<(), Error> {
-        Terminal::print("~")
-    }
-
-    fn draw_rows() -> Result<(), Error> {
-        let Size { height, .. } = Terminal::size()?;
-        for cur_row in 0..height {
-            Terminal::clear_line()?;
-            #[allow(clippy::integer_division)]
-            if cur_row == height / 3 {
-                Self::draw_welcome_msg()?;
-            } else {
-                Self::draw_empty_row()?;
-            }
-            if cur_row.saturating_add(1) < height {
-                Terminal::print("\r\n")?;
-            }
-        }
-        Ok(())
     }
 }
 
