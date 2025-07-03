@@ -1,4 +1,4 @@
-use super::terminal::{Size, Terminal};
+use super::terminal::{Position, Size, Terminal};
 use std::io::Error;
 
 mod buffer;
@@ -11,88 +11,106 @@ fn author_name() -> &'static str {
     env!("CARGO_PKG_AUTHORS").split('<').next().unwrap().trim()
 }
 
-#[derive(Default)]
 pub struct View {
     buffer: Buffer,
+    needs_redraw: bool,
+    size: Size,
+}
+
+impl Default for View {
+    fn default() -> Self {
+        Self { 
+            buffer: Buffer::default(),
+            needs_redraw: true,
+            size: Terminal::size().unwrap_or_default()
+        }
+    }
 }
 
 impl View {
-    pub fn render_welcome_screen() -> Result<(), Error> {
-        let Size {height, ..} = Terminal::size()?;
+    pub fn resize(&mut self, to: Size) {
+        self.size = to;
+        self.needs_redraw = true;
+    }
+
+    fn render_line(at: usize, line: &str) -> Result<(), Error> {
+        Terminal::move_caret_to(Position { col: 0, row: at })?;
+        Terminal::clear_line()?;
+        Terminal::print(line)
+    }
+
+    pub fn render(&mut self) -> Result<(), Error> {
+        if !self.needs_redraw {
+            return Ok(());
+        }
+
+        let Size { height, width } = self.size;
+        if height == 0 || width == 0 {
+            return Ok(());
+        }
+
+        #[allow(clippy::integer_division)]
+        let vertical_centre = height / 3;
         let mut cur_row = 0;
         while cur_row <= height {
-            Terminal::clear_line()?;
+            if let Some(ln) = self.buffer.lines.get(cur_row) {
+                let mut trunc_ln = ln.clone();
+                trunc_ln.truncate(width);
+                Self::render_line(cur_row, &trunc_ln)?;
+            } else if cur_row == vertical_centre && self.buffer.is_empty() {
+                let msg_lines = Self::build_welcome_msg(width);
+                for ln in msg_lines {
+                    Self::render_line(cur_row, &ln)?;
 
-            #[allow(clippy::integer_division)]
-            if cur_row == height / 3 {
-                let offset = Self::draw_welcome_msg()?;
-                cur_row += offset;
+                    cur_row = cur_row.saturating_add(1);
+                }
                 continue;
             } else {
-                Self::draw_empty_row()?;
+                Self::render_line(cur_row, "~")?;
             }
 
-            if cur_row.saturating_add(1) < height {
-                Terminal::print("\r\n")?;
-            }
-            cur_row += 1;
+            cur_row = cur_row.saturating_add(1);
         }
+        self.needs_redraw = false;
         Ok(())
-    }
-
-    pub fn render_buffer(&self) -> Result<(), Error> {
-        let Size {height, ..} = Terminal::size()?;
-        for cur_row in 0..height {
-            Terminal::clear_line()?;
-
-            if let Some(line) = self.buffer.lines.get(cur_row) {
-                Terminal::print(line)?;
-            } else {
-                Self::draw_empty_row()?;
-            }
-
-            if cur_row.saturating_add(1) < height {
-                Terminal::print("\r\n")?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn render(&self) -> Result<(), Error> {
-        if self.buffer.is_empty() {
-            Self::render_welcome_screen()
-        } else {
-            self.render_buffer()
-        }
     }
 
     pub fn load(&mut self, fname: &str) {
         if let Ok(buf) = Buffer::load(fname)  {
             self.buffer = buf;
         }
+        self.needs_redraw = true;
     }
 
-    fn draw_welcome_msg() -> Result<usize, Error> {
-        let mut msg = format!("Welcome to {NAME} editor v{VERSION}");
-        let cols = Terminal::size()?.width.saturating_sub(1);
+    fn push_if_fits(vec: &mut Vec<String>, msg: &str, width: usize) {
+        let cols = width.saturating_sub(1);
+        let len = msg.len();
+        if width <= len {
+            vec.push("~".to_string());
+        } else {
+            let msg = format!("~{msg:^cols$}");
+            vec.push(msg);
+        }
+    }
 
-        msg = format!("~{msg:^cols$}\r\n");
-        Terminal::print(&msg)?; // Line 1
+    fn build_welcome_msg(width: usize) -> Vec<String> {
+        if width == 0 {
+            return vec![" ".to_string()];
+        }
+
+        let mut ret_list: Vec<String> = Vec::new();
+
+        let mut msg = format!("Welcome to {NAME} editor v{VERSION}");
+        Self::push_if_fits(&mut ret_list, &msg, width);
 
         msg = format!("Written by {}", author_name());
-        msg = format!("~{msg:^cols$}\r\n");
-        Terminal::print(&msg)?; // Line 2
+        Self::push_if_fits(&mut ret_list, &msg, width);
 
-        Terminal::print("~\r\n")?; // Line 3
+        ret_list.push("~".to_string());
         
         // TODO: Replace it with some quotes
-        msg = format!("~{:^cols$}\r\n", "Start writing something now!");
-        Terminal::print(&msg)?; // Line 4
+        Self::push_if_fits(&mut ret_list, "Start writing something now!", width);
 
-        return Ok(4)
-    }
-
-    fn draw_empty_row() -> Result<(), Error> {
-        Terminal::print("~")
+        ret_list
     }
 }
