@@ -1,5 +1,4 @@
-use super::terminal::{Position, Size, Terminal};
-use std::io::Error;
+use super::terminal::{Size, Terminal};
 
 mod buffer;
 use buffer::Buffer;
@@ -33,20 +32,19 @@ impl View {
         self.needs_redraw = true;
     }
 
-    fn render_line(at: usize, line: &str) -> Result<(), Error> {
-        Terminal::move_caret_to(Position { col: 0, row: at })?;
-        Terminal::clear_line()?;
-        Terminal::print(line)
+    fn render_line(at: usize, line: &str) {
+        let result = Terminal::print_row(at, line);
+        debug_assert!(result.is_ok(), "Failed to render line");
     }
 
-    pub fn render(&mut self) -> Result<(), Error> {
+    pub fn render(&mut self) {
         if !self.needs_redraw {
-            return Ok(());
+            return;
         }
 
         let Size { height, width } = self.size;
         if height == 0 || width == 0 {
-            return Ok(());
+            return;
         }
 
         #[allow(clippy::integer_division)]
@@ -56,23 +54,22 @@ impl View {
             if let Some(ln) = self.buffer.lines.get(cur_row) {
                 let mut trunc_ln = ln.clone();
                 trunc_ln.truncate(width);
-                Self::render_line(cur_row, &trunc_ln)?;
+                Self::render_line(cur_row, &trunc_ln);
             } else if cur_row == vertical_centre && self.buffer.is_empty() {
                 let msg_lines = Self::build_welcome_msg(width);
                 for ln in msg_lines {
-                    Self::render_line(cur_row, &ln)?;
+                    Self::render_line(cur_row, &ln);
 
                     cur_row = cur_row.saturating_add(1);
                 }
                 continue;
             } else {
-                Self::render_line(cur_row, "~")?;
+                Self::render_line(cur_row, "~");
             }
 
             cur_row = cur_row.saturating_add(1);
         }
         self.needs_redraw = false;
-        Ok(())
     }
 
     pub fn load(&mut self, fname: &str) {
